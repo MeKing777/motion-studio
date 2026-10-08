@@ -1,5 +1,5 @@
 === Motion Studio ===
-Contributors: fahiz
+Contributors: Abhishek
 Tags: animation, visual editor, effects, text styles, page builder
 Requires at least: 5.8
 Tested up to: 6.6
