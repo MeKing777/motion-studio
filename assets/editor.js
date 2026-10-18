@@ -251,6 +251,13 @@
 	function img(cls) { return '<img class="' + (cls || 'ms-img-el') + '" src="' + PH + '" alt="">'; }
 	function cdDate() { var d = new Date(Date.now() + 14 * 864e5); d.setSeconds(0, 0); return d.toISOString().slice(0, 16); }
 
+	var SEARCH_TYPES = [['classic', 'Classic box'], ['pill', 'Pill + button'], ['underline', 'Underline'], ['expand', 'Expanding icon'], ['glass', 'Glass'], ['solid', 'Input + solid button'], ['overlay', 'Full-screen overlay']];
+
+	function logoHtml() {
+		var name = esc(CFG.siteName || 'Your Brand');
+		return '<a class="ms-logo-el" href="' + esc(CFG.home || '/') + '"><img src="' + esc(CFG.siteLogo || PH) + '" alt="' + name + '"><span class="ms-logo-text">' + name + '</span></a>';
+	}
+
 	var ELEMENTS = [
 		{ id: 'heading', n: 'Heading', i: 'H', html: function () { return '<h2>Your heading here</h2>'; } },
 		{ id: 'text', n: 'Text', i: '¶', html: function () { return '<p>' + lorem(1) + '</p>'; } },
@@ -276,6 +283,8 @@
 		{ id: 'skill', n: 'Progress bar', i: '▰', html: function () { return '<div class="ms-skill"><span>Skill / goal</span><div class="ms-skill-bar"><i style="width:80%"></i></div></div>'; } },
 		{ id: 'social', n: 'Social icons', i: '@', html: function () { return '<div class="ms-social"><a href="#" aria-label="Facebook">f</a><a href="#" aria-label="Instagram">ig</a><a href="#" aria-label="X">X</a><a href="#" aria-label="LinkedIn">in</a><a href="#" aria-label="YouTube">▶</a></div>'; } },
 		{ id: 'popup', n: 'Popup', i: '🗔', html: function () { return '<div class="ms-popup"><div class="ms-popup-box"><button type="button" class="ms-popup-x" data-ms-close aria-label="Close">×</button><span class="ms-badge">Limited offer</span><h3>Get 20% off today</h3><p>Use the Link tab on any button to open this popup.</p><div class="ms-btn-wrap" style="justify-content:center"><a class="ms-btn-el" href="#">Claim offer</a></div></div></div>'; } }
+		,{ id: 'search', n: 'Search bar', i: '🔎', html: function () { return '<div class="ms-search"></div>'; }, rules: [{ s: ' .ms-search', search: { type: 'classic', placeholder: 'Search…', scope: 'all', live: true } }] },
+		{ id: 'logo', n: 'Logo', i: '◈', html: function () { return logoHtml(); }, rules: [{ s: ' .ms-logo-el', logo: { mode: 'both' } }] }
 	];
 
 	var SECTIONS = [
@@ -409,6 +418,17 @@
 			if (h.hide) out += 'body.ms-scroll-down ' + sel + '{transform:translateY(-110%)}' + sel + '{transition:transform .35s ease,padding .3s,background-color .3s}';
 			out += '\n';
 		}
+		if (r.logo) {
+			var lg = r.logo, okc = function (c) { return /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i.test(c || ''); }, nn = function (v) { return isFinite(parseFloat(v)) ? parseFloat(v) : null; };
+			if (lg.mode === 'image') out += sel + ' .ms-logo-text{display:none !important}';
+			if (lg.mode === 'text') out += sel + ' img{display:none !important}';
+			if (nn(lg.size) != null) out += sel + ' img{height:' + nn(lg.size) + 'px !important;width:auto !important;max-width:none}';
+			if (nn(lg.gap) != null) out += sel + '{gap:' + nn(lg.gap) + 'px}';
+			if (nn(lg.textSize) != null) out += sel + ' .ms-logo-text{font-size:' + nn(lg.textSize) + 'px}';
+			if (okc(lg.color)) out += sel + ' .ms-logo-text{color:' + lg.color + ' !important}';
+			if (nn(lg.round) != null) out += sel + ' img{border-radius:' + nn(lg.round) + '% !important}';
+			out += '\n';
+		}
 		if (r.style && r.style.hover && Object.keys(r.style.hover).length) out += sel + ':hover,' + sel + '.ms-force-hover{' + decls(r.style.hover) + '}\n';
 		return out;
 	}
@@ -496,7 +516,7 @@
 		var hasStyle = ['desktop', 'tablet', 'mobile', 'hover'].some(function (d) { return st[d] && Object.keys(st[d]).length; });
 		var hasContent = r.content && Object.keys(r.content).length;
 		var has = function (k) { return r[k] && (typeof r[k] !== 'object' || Object.keys(r[k]).some(function (x) { return r[k][x] !== '' && r[k][x] != null && r[k][x] !== false; })); };
-		return !(hasStyle || hasContent || r.frame || r.icon || has('link') || has('menu') || has('header') || has('popup') || has('countdown') || has('video') || (r.text && r.text.preset) || (r.anim && (r.anim.in || r.anim.out)) ||
+		return !(hasStyle || hasContent || r.frame || r.icon || has('link') || has('menu') || has('header') || has('popup') || has('countdown') || has('video') || has('search') || has('logo') || (r.text && r.text.preset) || (r.anim && (r.anim.in || r.anim.out)) ||
 			(r.loop && r.loop.type) || (r.fx && r.fx.list && r.fx.list.length));
 	}
 
@@ -839,7 +859,7 @@
 			['style', 'content', 'anim', 'loop', 'fx', 'text'].forEach(function (k) { if (Array.isArray(r[k])) r[k] = {}; });
 			if (r.style) DEV_ORDER.forEach(function (dv) { if (Array.isArray(r.style[dv])) r.style[dv] = {}; });
 			if (r.fx && r.fx.list && !Array.isArray(r.fx.list)) r.fx.list = Object.values(r.fx.list);
-			['link', 'menu', 'header', 'popup', 'countdown', 'video'].forEach(function (k) { if (Array.isArray(r[k])) delete r[k]; });
+			['link', 'menu', 'header', 'popup', 'countdown', 'video', 'search', 'logo'].forEach(function (k) { if (Array.isArray(r[k])) delete r[k]; });
 		});
 		var obj = function (v) { return v && !Array.isArray(v) && typeof v === 'object' ? v : {}; };
 		return { rules: rules, ops: Array.isArray(d.ops) ? d.ops : [], connectors: Array.isArray(d.connectors) ? d.connectors : [], theme: obj(d.theme), site: obj(d.site) };
@@ -1153,7 +1173,7 @@
 		else if (k.indexOf('r:') === 0) pset(r, k.slice(2), v);
 		markDirty(r);
 		updateCss();
-		if (/^r:(anim|loop|fx|link|menu|popup|countdown|video)/.test(k)) fq(r.selector).forEach(function (el) { RT.applyRuleTo(el, r, { skipContent: true }); });
+		if (/^r:(anim|loop|fx|link|menu|popup|countdown|video|search)/.test(k)) fq(r.selector).forEach(function (el) { RT.applyRuleTo(el, r, { skipContent: true }); });
 	}
 
 	function syncValues() {
@@ -2229,6 +2249,49 @@
 		}
 		if (el.matches('.ms-video')) h += sec('▶ Video', row('YouTube / Vimeo link', cText('r:video.url', 'https://youtube.com/watch?v=…', 'data-lazy'), 'ms-col'));
 		if (el.matches('.ms-countdown')) h += sec('⏱ Countdown', row('Ends at', '<input type="datetime-local" data-k="r:countdown.date" data-lazy>') + hint('Uses the visitor’s local time.'));
+		var inlineOnly = !el.querySelector('*:not(br):not(span):not(strong):not(em):not(b):not(i):not(u):not(mark):not(small)');
+		if (inlineOnly && el.textContent.trim() && !/^(IMG|INPUT|SELECT|TEXTAREA|SVG)$/i.test(el.tagName) && !el.closest('.ms-search')) {
+			h += sec('✨ AI writer (Gemini)', CFG.aiReady ?
+				'<textarea data-ai="prompt" rows="3" placeholder="e.g. Friendly headline for a bakery, or: translate to Malayalam" style="width:100%;box-sizing:border-box"></textarea>' +
+				row('Task', '<select data-ai="mode"><option value="rewrite">Rewrite this text</option><option value="write">Write new text</option><option value="shorter">Make shorter</option><option value="longer">Make longer</option><option value="fix">Fix spelling &amp; grammar</option><option value="translate">Translate (say which language above)</option></select>') +
+				btn('ai-run', '✨ Generate and apply', 'ms-primary ms-wide') + hint('Replaces this element’s text. Use Undo (Ctrl+Z) if you don’t like it.') :
+				hint('Add your Gemini API key in <b>Motion Studio → Settings</b> in the WordPress dashboard to turn this on.'));
+		}
+		var sBar = el.closest('.ms-search');
+		if (sBar && sBar !== el) h += sec('🔎 Search bar', btn('select-search', 'Select the whole search bar', 'ms-wide'));
+		if (el.matches('.ms-search')) {
+			h += sec('🔎 Search bar',
+				'<div class="ms-sub">Type</div>' +
+				cTiles('r:search.type', SEARCH_TYPES, { cls: 'ms-chips' }) +
+				row('Placeholder', cText('r:search.placeholder', 'Search…', 'data-lazy'), 'ms-col') +
+				row('Button text', cText('r:search.button', 'Empty = magnifier icon', 'data-lazy'), 'ms-col') +
+				row('Search in', cSelect('r:search.scope', [['all', 'Whole site'], ['post', 'Posts only'], ['page', 'Pages only'], ['product', 'Products (WooCommerce)']])) +
+				row('', cToggle('r:search.live', 'Show live results while typing', true)) +
+				row('Width', cRange('s:width', 160, 900, 5, 'px')) +
+				hint('Visitors are taken to your theme’s normal search results page. Live results use the public WordPress search.'));
+		}
+		var lBar = el.closest('.ms-logo-el');
+		if (lBar && lBar !== el) h += sec('◈ Logo', btn('select-logo', 'Select the whole logo', 'ms-wide'));
+		if (el.matches('.ms-logo-el')) {
+			h += sec('◈ Logo',
+				btn('logo-pick', icon('format-image') + ' Choose logo image', 'ms-primary ms-wide') +
+				(CFG.siteLogo ? btn('logo-site', 'Use my site logo', 'ms-wide') : '') +
+				row('Show', cSelect('r:logo.mode', [['both', 'Logo + name'], ['image', 'Logo image only'], ['text', 'Name only']])) +
+				row('Logo height', cRange('r:logo.size', 16, 200, 1, '', 'data-num')) +
+				row('Corner round', cRange('r:logo.round', 0, 50, 1, '', 'data-num')) +
+				row('Name size', cRange('r:logo.textSize', 12, 64, 1, '', 'data-num')) +
+				row('Name color', cColor('r:logo.color')) +
+				row('Gap', cRange('r:logo.gap', 0, 40, 1, '', 'data-num')) +
+				hint('Double-click the name to rename it. It links to your home page – change that in the <b>Link</b> tab.'));
+		}
+		var mq = el.matches('.ms-marquee, .ms-marquee-track') ? el : el.closest('.ms-marquee');
+		if (mq) {
+			h += sec('🏷 Logos',
+				btn('marquee-add', '+ Add logos from Media Library', 'ms-primary ms-wide') +
+				btn('marquee-clear', 'Remove placeholder names', 'ms-wide') +
+				hint('Pick several images at once. They scroll in the strip and turn colorful on hover.'));
+		}
+		if (isHeader && !el.querySelector('.ms-logo-el')) h += sec('Add to header', btn('logo-header', '◈ Add logo here', 'ms-wide') + (el.querySelector('.ms-search') ? '' : btn('search-header', '🔎 Add search bar here', 'ms-wide')));
 		if (el.matches('.ms-popup')) {
 			h += sec('🗔 Popup', row('Auto-open after (s)', cRange('r:popup.delay', 0, 60, 1, '', 'data-num')) + row('', cToggle('r:popup.once', 'Only once per visitor', true)) +
 				hint('0 = opens only from a button. Select a button → <b>Link</b> tab → “Open / close popup” → pick this popup.'));
@@ -2340,6 +2403,99 @@
 		'select-menu': function () { var m = S.el && S.el.querySelector('nav ul, .menu, ul, nav'); if (m) select(m, true); },
 		'select-popup': function () { var p = S.el && S.el.closest('.ms-popup'); if (p) select(p, true); },
 		'media-lib': function () { pickMedia(function (m) { placeMedia({ url: m.url, alt: m.alt }, S.el && S.el.tagName === 'IMG' ? { el: S.el, pos: 'replace' } : (S.el ? { el: S.el, pos: 'after' } : null)); }); }
+	});
+
+	function runAi() {
+		var el = S.el; if (!el) return;
+		var pr = $('[data-ai=prompt]', UI.body), md = $('[data-ai=mode]', UI.body);
+		if (!pr || !md) return;
+		var btnEl = $('[data-act=ai-run]', UI.body); if (btnEl) btnEl.disabled = true;
+		toast('Asking Gemini…');
+		fetch(CFG.rest + 'ai', {
+			method: 'POST', credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': CFG.nonce },
+			body: JSON.stringify({ mode: md.value, prompt: pr.value, text: el.textContent.trim() })
+		}).then(function (res) {
+			return res.json().then(function (j) { if (!res.ok) throw new Error(j && j.message || res.statusText); return j; });
+		}).then(function (j) {
+			if (S.el !== el) { toast('Selection changed – nothing applied', 'err'); return; }
+			setContent('html', esc(j.text).replace(/\n/g, '<br>'));
+			renderPanel();
+			toast('Text updated ✨', 'ok', UNDO);
+		}).catch(function (e) { toast('AI: ' + e.message, 'err'); })
+			.finally(function () { if (btnEl) btnEl.disabled = false; });
+	}
+	function pickMediaMulti(cb) {
+		if (!window.wp || !wp.media) { var u = prompt('Image URL'); if (u) cb([{ url: u }]); return; }
+		var frame = wp.media({ title: 'Choose logos', library: { type: 'image' }, multiple: 'add', button: { text: 'Add logos' } });
+		frame.on('select', function () { cb(frame.state().get('selection').toJSON()); });
+		frame.open();
+	}
+	function setChildContent(child, f, v) {
+		pushHistory('child' + Date.now());
+		var r = ensureRuleFor(cssPath(child), friendly(child));
+		r.content = r.content || {};
+		if (v === '' || v == null) delete r.content[f]; else r.content[f] = v;
+		markDirty(r);
+		fq(r.selector).forEach(function (el) { RT.applyRuleTo(el, r); });
+		updateCss();
+	}
+	function marqueeTrack() {
+		if (!S.el) return null;
+		return S.el.matches('.ms-marquee-track') ? S.el : (S.el.querySelector('.ms-marquee-track') || (S.el.closest('.ms-marquee') && S.el.closest('.ms-marquee').querySelector('.ms-marquee-track')));
+	}
+	function marqueeItems(track, keepText) {
+		var kids = Array.prototype.slice.call(track.children), n = kids.length;
+		function sig(k) { return k.tagName + (k.getAttribute('src') || '') + k.textContent; }
+		var half = n > 1 && n % 2 === 0 && kids.slice(0, n / 2).map(sig).join('|') === kids.slice(n / 2).map(sig).join('|') ? kids.slice(0, n / 2) : kids;
+		return half.map(function (k) {
+			if (k.tagName === 'IMG') return '<img class="ms-logo-item" src="' + esc(k.getAttribute('src') || '') + '" alt="' + esc(k.getAttribute('alt') || '') + '">';
+			return keepText ? '<span>' + esc(k.textContent) + '</span>' : '';
+		});
+	}
+	function setMarquee(track, items, msg) {
+		pushHistory('marquee' + Date.now());
+		var html = items.join('');
+		var r = ensureRuleFor(cssPath(track), 'Logos');
+		r.content = r.content || {};
+		r.content.html = html + html;
+		markDirty(r);
+		fq(r.selector).forEach(function (el) { RT.applyRuleTo(el, r); });
+		updateCss(); renderPanel(); toast(msg, 'ok');
+	}
+	Object.assign(ACTIONS, {
+		'ai-run': runAi,
+		'select-search': function () { var b = S.el && S.el.closest('.ms-search'); if (b) select(b, true); },
+		'select-logo': function () { var b = S.el && S.el.closest('.ms-logo-el'); if (b) select(b, true); },
+		'logo-pick': function () {
+			var img = S.el && S.el.querySelector('img'); if (!img) return;
+			pickMedia(function (m) { setChildContent(img, 'src', m.url); setChildContent(img, 'alt', m.alt || m.title || ''); renderPanel(); toast('Logo updated ✓', 'ok'); });
+		},
+		'logo-site': function () {
+			var img = S.el && S.el.querySelector('img'); if (!img || !CFG.siteLogo) return;
+			setChildContent(img, 'src', CFG.siteLogo); renderPanel(); toast('Site logo applied ✓', 'ok');
+		},
+		'logo-header': function () {
+			if (!S.el) return;
+			addBlock(logoHtml(), { el: S.el, pos: 'prepend' }, [{ s: ' .ms-logo-el', logo: { mode: 'both' } }], 'Logo');
+		},
+		'search-header': function () {
+			if (!S.el) return;
+			addBlock('<div class="ms-search"></div>', { el: S.el, pos: 'append' }, [{ s: ' .ms-search', search: { type: 'expand', placeholder: 'Search…', scope: 'all', live: true } }], 'Search bar');
+		},
+		'marquee-add': function () {
+			var tr = marqueeTrack(); if (!tr) return;
+			pickMediaMulti(function (list) {
+				var add = list.filter(function (m) { return m && m.url; }).map(function (m) { return '<img class="ms-logo-item" src="' + esc(m.url) + '" alt="' + esc(m.alt || m.title || '') + '">'; });
+				if (!add.length) return;
+				var cur = marqueeItems(tr, true).filter(function (x) { return !/^<span>(BRAND|COMPANY|STUDIO|AGENCY|PARTNER|CLIENT)<\/span>$/.test(x); });
+				setMarquee(tr, cur.concat(add), add.length + ' logo(s) added ✓');
+			});
+		},
+		'marquee-clear': function () {
+			var tr = marqueeTrack(); if (!tr) return;
+			setMarquee(tr, marqueeItems(tr, false), 'Placeholder names removed');
+		}
 	});
 
 	function forceHover() {

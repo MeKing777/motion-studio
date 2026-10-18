@@ -3,7 +3,7 @@
  * Plugin Name:       Motion Studio
  * Plugin URI:        https://example.com/motion-studio
  * Description:       Canva-style visual builder for any theme: drag & drop elements, ready sections, image frames, links & connector lines, menu styles, site themes, plus in/out animations, FX, text styles and drag/resize layout – per device.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Fahiz
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MS_VERSION', '1.2.0' );
+define( 'MS_VERSION', '1.3.0' );
 define( 'MS_FILE', __FILE__ );
 define( 'MS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MS_URL', plugin_dir_url( __FILE__ ) );

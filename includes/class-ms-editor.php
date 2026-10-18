@@ -19,7 +19,7 @@ class MS_Editor {
 		return add_query_arg(
 			array(
 				'page' => self::SLUG,
-				'url'  => rawurlencode( remove_query_arg( 'ms_frame', $url ) ),
+				'url'  => rawurlencode( remove_query_arg( 'ms_frame', esc_url_raw( $url, array( 'http', 'https' ) ) ) ),
 			),
 			admin_url( 'admin.php' )
 		);
@@ -33,13 +33,27 @@ class MS_Editor {
 
 	/** Only same-site URLs may be loaded into the editor. */
 	private static function target_url() {
-		$url  = isset( $_GET['url'] ) ? esc_url_raw( rawurldecode( wp_unslash( $_GET['url'] ) ) ) : ''; // phpcs:ignore
+		// PHP has already URL-decoded $_GET, so decoding again would corrupt addresses that contain "%".
+		$url  = isset( $_GET['url'] ) ? esc_url_raw( wp_unslash( $_GET['url'] ), array( 'http', 'https' ) ) : ''; // phpcs:ignore
 		$home = wp_parse_url( home_url() );
 		$p    = $url ? wp_parse_url( $url ) : false;
 		if ( ! $p || empty( $p['host'] ) || strtolower( $p['host'] ) !== strtolower( $home['host'] ) ) {
 			$url = home_url( '/' );
 		}
 		return $url;
+	}
+
+	/** URL of the logo set in Appearance → Customize → Site Identity (empty if none). */
+	private static function site_logo_url() {
+		$id = (int) get_theme_mod( 'custom_logo' );
+		if ( $id ) {
+			$src = wp_get_attachment_image_url( $id, 'full' );
+			if ( $src ) {
+				return esc_url_raw( $src );
+			}
+		}
+		$icon = get_site_icon_url( 192 );
+		return $icon ? esc_url_raw( $icon ) : '';
 	}
 
 	private static function page_list() {
@@ -59,6 +73,11 @@ class MS_Editor {
 		}
 		$url = self::target_url();
 
+		nocache_headers();
+		header( 'X-Content-Type-Options: nosniff' );
+		header( 'Referrer-Policy: same-origin' );
+		header( 'X-Frame-Options: SAMEORIGIN' );
+
 		wp_enqueue_media();
 		wp_enqueue_style( 'motion-studio-runtime', MS_URL . 'assets/runtime.css', array(), MS_VERSION );
 		wp_enqueue_style( 'motion-studio-editor', MS_URL . 'assets/editor.css', array( 'motion-studio-runtime', 'dashicons' ), MS_VERSION );
@@ -76,6 +95,10 @@ class MS_Editor {
 				'version'   => MS_VERSION,
 				'restRoot'  => esc_url_raw( rest_url() ),
 				'canUpload' => current_user_can( 'upload_files' ),
+				'home'      => esc_url_raw( home_url( '/' ) ),
+				'siteName'  => wp_strip_all_tags( get_bloginfo( 'name' ) ),
+				'siteLogo'  => self::site_logo_url(),
+				'aiReady'   => '' !== MS_Store::gemini_key(),
 				'pages'     => self::page_list(),
 			)
 		);

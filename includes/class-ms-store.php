@@ -18,7 +18,20 @@ class MS_Store {
 			'reduced' => 1,   // respect prefers-reduced-motion.
 			'mobile'  => 1,   // run animations on phones.
 			'offset'  => 0.15,
+			'strict_html' => 0, // 1 = always filter saved HTML, even for users who have unfiltered_html.
+			'delete_data' => 0, // 1 = remove all Motion Studio data when the plugin is deleted.
+			'gemini_key'   => '', // Google Gemini API key (server-side only, never sent to the browser).
+			'gemini_model' => 'gemini-2.5-flash',
 		);
+	}
+
+	/** Gemini key: wp-config constant wins over the saved option. */
+	public static function gemini_key() {
+		if ( defined( 'MS_GEMINI_KEY' ) && MS_GEMINI_KEY ) {
+			return (string) MS_GEMINI_KEY;
+		}
+		$s = self::settings();
+		return (string) $s['gemini_key'];
 	}
 
 	public static function settings() {
@@ -48,10 +61,10 @@ class MS_Store {
 		$index[ $key ] = array(
 			'url'     => isset( $meta['url'] ) ? esc_url_raw( $meta['url'] ) : '',
 			'title'   => isset( $meta['title'] ) ? sanitize_text_field( $meta['title'] ) : $key,
-			'rules'   => count( $data['rules'] ),
+			'rules'   => count( $data['rules'] ) + count( $data['ops'] ),
 			'updated' => time(),
 		);
-		if ( empty( $data['rules'] ) ) {
+		if ( empty( $data['rules'] ) && empty( $data['ops'] ) && empty( $data['connectors'] ) && '' === trim( (string) $data['css'] ) ) {
 			unset( $index[ $key ] );
 		}
 		update_option( 'ms_index', $index, false );
@@ -143,8 +156,7 @@ class MS_Store {
 			}
 		}
 		if ( isset( $raw['css'] ) && is_string( $raw['css'] ) ) {
-			// Never allow breaking out of the <style> tag.
-			$out['css'] = str_replace( '<', '', $raw['css'] );
+			$out['css'] = self::clean_css( $raw['css'] );
 		}
 		if ( ! empty( $raw['fonts'] ) && is_array( $raw['fonts'] ) ) {
 			foreach ( $raw['fonts'] as $f ) {
@@ -158,12 +170,49 @@ class MS_Store {
 	}
 
 	private static function clean_selector( $sel ) {
-		return trim( preg_replace( '/[<{};]/', '', (string) $sel ) );
+		$sel = preg_replace( '/[<{};]/', '', (string) $sel );
+		return trim( substr( $sel, 0, 1000 ) );
+	}
+
+	/**
+	 * Make generated CSS safe to print inside a <style> tag.
+	 * Removes markup, @import, legacy script hooks and non-image / script URLs.
+	 */
+	public static function clean_css( $css ) {
+		$css = substr( (string) $css, 0, 600000 );
+		$css = str_replace( '<', '', $css ); // Never allow breaking out of the <style> tag.
+		$css = preg_replace( '#/\*.*?\*/#s', '', $css );
+		$css = preg_replace( '/@(import|charset|namespace)[^;]*;?/i', '', $css );
+		$css = preg_replace( '/expression\s*\(|behavior\s*:|-moz-binding\s*:|javascript\s*:|vbscript\s*:/i', '', $css );
+		// Only allow safe URLs inside url(...).
+		$css = preg_replace_callback(
+			'/url\(\s*([\'"]?)(.*?)\1\s*\)/is',
+			function ( $m ) {
+				$u = trim( $m[2] );
+				if ( preg_match( '#^(https?:)?//#i', $u ) || preg_match( '#^data:image/(png|jpe?g|gif|webp|svg\+xml|avif)[;,]#i', $u ) || preg_match( '#^[\w./%~@?=&\#+-]+$#', $u ) || '#' === substr( $u, 0, 1 ) ) {
+					return 'url(' . $m[1] . $u . $m[1] . ')';
+				}
+				return 'none';
+			},
+			$css
+		);
+		return $css;
+	}
+
+	/** Links may only use http, https, mailto, tel or be relative / anchors. */
+	public static function clean_link_value( $v ) {
+		$v = trim( wp_strip_all_tags( (string) $v ) );
+		$v = preg_replace( '/[\x00-\x1F\x7F]/', '', $v );
+		return wp_kses_bad_protocol( $v, array( 'http', 'https', 'mailto', 'tel' ) );
 	}
 
 	/** HTML from the editor: admins with unfiltered_html keep everything, others get wp_kses_post. */
 	private static function clean_html( $html ) {
-		return current_user_can( 'unfiltered_html' ) ? (string) $html : wp_kses_post( (string) $html );
+		$settings = self::settings();
+		if ( empty( $settings['strict_html'] ) && current_user_can( 'unfiltered_html' ) ) {
+			return (string) $html;
+		}
+		return wp_kses_post( (string) $html );
 	}
 
 	private static function sanitize_op( $op ) {
@@ -216,7 +265,7 @@ class MS_Store {
 			);
 		}
 		// Everything else is plain scalar config: strip tags recursively.
-		$extra       = array( 'link', 'menu', 'header', 'frame', 'icon', 'popup', 'countdown', 'video' );
+		$extra       = array( 'link', 'menu', 'header', 'frame', 'icon', 'popup', 'countdown', 'video', 'search', 'logo' );
 		$link_target = isset( $rule['link']['target'] ) && is_string( $rule['link']['target'] ) ? self::clean_selector( $rule['link']['target'] ) : null;
 		foreach ( array_merge( array( 'style', 'text', 'anim', 'loop', 'fx', 'label', 'scope', 'id' ), $extra ) as $k ) {
 			if ( isset( $rule[ $k ] ) ) {
@@ -225,6 +274,22 @@ class MS_Store {
 		}
 		if ( null !== $link_target && is_array( $rule['link'] ) ) {
 			$rule['link']['target'] = $link_target;
+		}
+		if ( isset( $rule['link'] ) && is_array( $rule['link'] ) && isset( $rule['link']['value'] ) && in_array( isset( $rule['link']['type'] ) ? $rule['link']['type'] : '', array( 'url', 'page' ), true ) ) {
+			$rule['link']['value'] = self::clean_link_value( $rule['link']['value'] );
+		}
+		if ( isset( $rule['video']['url'] ) ) {
+			$rule['video']['url'] = esc_url_raw( (string) $rule['video']['url'], array( 'https' ) );
+		}
+		if ( isset( $rule['search'] ) && is_array( $rule['search'] ) ) {
+			$types = array( 'classic', 'pill', 'underline', 'expand', 'glass', 'solid', 'overlay' );
+			$scope = array( 'all', 'post', 'page', 'product' );
+			$rule['search']['type']  = in_array( isset( $rule['search']['type'] ) ? $rule['search']['type'] : '', $types, true ) ? $rule['search']['type'] : 'classic';
+			$rule['search']['scope'] = in_array( isset( $rule['search']['scope'] ) ? $rule['search']['scope'] : '', $scope, true ) ? $rule['search']['scope'] : 'all';
+		}
+		if ( isset( $rule['logo'] ) && is_array( $rule['logo'] ) ) {
+			$modes                = array( 'both', 'image', 'text' );
+			$rule['logo']['mode'] = in_array( isset( $rule['logo']['mode'] ) ? $rule['logo']['mode'] : '', $modes, true ) ? $rule['logo']['mode'] : 'both';
 		}
 		$allowed = array_merge( array( 'id', 'selector', 'label', 'scope', 'content', 'style', 'text', 'anim', 'loop', 'fx' ), $extra );
 		return array_intersect_key( $rule, array_flip( $allowed ) );

@@ -74,7 +74,7 @@ class MS_Frontend {
 		$runtime_rules = array();
 		foreach ( array_merge( self::$global['rules'], self::$page['rules'] ) as $r ) {
 			unset( $r['style'], $r['text'], $r['label'] );
-			$behaviour = array( 'content', 'anim', 'fx', 'loop', 'link', 'menu', 'popup', 'video', 'countdown' );
+			$behaviour = array( 'content', 'anim', 'fx', 'loop', 'link', 'menu', 'popup', 'video', 'countdown', 'search' );
 			if ( array_filter( array_intersect_key( $r, array_flip( $behaviour ) ) ) ) {
 				$runtime_rules[] = $r;
 			}
@@ -82,6 +82,8 @@ class MS_Frontend {
 
 		$data = array(
 			'frame'    => $frame,
+			'home'     => esc_url_raw( home_url( '/' ) ),
+			'restRoot' => esc_url_raw( rest_url() ),
 			'rules'    => $frame ? array() : $runtime_rules,
 			'settings'   => MS_Store::settings(),
 			'ops'        => $frame ? array() : array_merge( (array) self::$global['ops'], (array) self::$page['ops'] ),
@@ -94,7 +96,7 @@ class MS_Frontend {
 			$data['page']    = self::$page;
 			$data['global']  = self::$global;
 		}
-		wp_add_inline_script( 'motion-studio-runtime', 'window.MS_DATA=' . wp_json_encode( $data ) . ';', 'before' );
+		wp_add_inline_script( 'motion-studio-runtime', 'window.MS_DATA=' . wp_json_encode( $data, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
 	}
 
 	public static function head() {
@@ -104,7 +106,7 @@ class MS_Frontend {
 		// "ms-js" enables the anti-flash rules (elements waiting for their entrance animation).
 		// Fallback: if the runtime never loads, show everything after 3s.
 		echo "<script>document.documentElement.classList.add('ms-js');setTimeout(function(){if(!window.MotionStudioRuntime)document.documentElement.classList.remove('ms-js')},3000);</script>\n";
-		$css = trim( self::$global['css'] . "\n" . self::$page['css'] );
+		$css = MS_Store::clean_css( trim( self::$global['css'] . "\n" . self::$page['css'] ) );
 		if ( '' !== $css ) {
 			echo '<style id="motion-studio-css">' . $css . "</style>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- sanitized on save (no "<").
 		}
@@ -114,9 +116,12 @@ class MS_Frontend {
 		if ( is_admin() || ! current_user_can( MS_CAP ) ) {
 			return;
 		}
-		$scheme = is_ssl() ? 'https://' : 'http://';
-		$host   = isset( $_SERVER['HTTP_HOST'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) : '';
-		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/';
+		// Build the address from the configured site URL, never from the (spoofable) Host header.
+		$home   = wp_parse_url( home_url() );
+		$scheme = ( isset( $home['scheme'] ) ? $home['scheme'] : 'http' ) . '://';
+		$host   = ( isset( $home['host'] ) ? $home['host'] : '' ) . ( isset( $home['port'] ) ? ':' . $home['port'] : '' );
+		$uri    = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '/'; // phpcs:ignore
+		$uri    = '/' . ltrim( preg_replace( '/[\x00-\x1F\x7F\s]/', '', (string) $uri ), '/\\' );
 		$bar->add_node(
 			array(
 				'id'    => 'motion-studio',

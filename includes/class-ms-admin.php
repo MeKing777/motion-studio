@@ -34,19 +34,40 @@ class MS_Admin {
 		check_admin_referer( $action );
 	}
 
+	/** Remember a one-time notice for this user (never taken from the URL, so it cannot be spoofed). */
 	private static function back( $msg ) {
-		wp_safe_redirect( add_query_arg( 'ms_msg', rawurlencode( $msg ), admin_url( 'admin.php?page=motion-studio' ) ) );
+		set_transient( 'ms_notice_' . get_current_user_id(), (string) $msg, 60 );
+		wp_safe_redirect( add_query_arg( 'ms_msg', '1', admin_url( 'admin.php?page=motion-studio' ) ) );
 		exit;
+	}
+
+	private static function take_notice() {
+		if ( empty( $_GET['ms_msg'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			return '';
+		}
+		$k   = 'ms_notice_' . get_current_user_id();
+		$msg = get_transient( $k );
+		delete_transient( $k );
+		return is_string( $msg ) ? $msg : '';
 	}
 
 	public static function handle_settings() {
 		self::check( 'ms_settings' );
+		$old   = MS_Store::settings();
+		$key   = isset( $_POST['gemini_key'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['gemini_key'] ) ) ) : '';
+		$key   = ! empty( $_POST['gemini_clear'] ) ? '' : ( '' !== $key ? $key : $old['gemini_key'] );
+		$model = isset( $_POST['gemini_model'] ) ? strtolower( trim( sanitize_text_field( wp_unslash( $_POST['gemini_model'] ) ) ) ) : '';
+		$model = preg_match( '/^[a-z0-9.\-]{3,60}$/', $model ) ? $model : 'gemini-2.5-flash';
 		update_option(
 			'ms_settings',
 			array(
+				'gemini_key'   => preg_match( '/^[A-Za-z0-9._\-]{10,200}$/', $key ) ? $key : '',
+				'gemini_model' => $model,
 				'reduced' => empty( $_POST['reduced'] ) ? 0 : 1,
 				'mobile'  => empty( $_POST['mobile'] ) ? 0 : 1,
 				'offset'  => isset( $_POST['offset'] ) ? max( 0, min( 0.9, (float) $_POST['offset'] ) ) : 0.15,
+				'strict_html' => empty( $_POST['strict_html'] ) ? 0 : 1,
+				'delete_data' => empty( $_POST['delete_data'] ) ? 0 : 1,
 			)
 		);
 		self::back( 'Settings saved.' );
@@ -73,13 +94,14 @@ class MS_Admin {
 		$out = array(
 			'plugin'   => 'motion-studio',
 			'version'  => MS_VERSION,
-			'settings' => MS_Store::settings(),
+			'settings' => array_diff_key( MS_Store::settings(), array( 'gemini_key' => 1 ) ), // never export secrets.
 			'global'   => MS_Store::get_global(),
 			'pages'    => array(),
 		);
-		foreach ( array_keys( (array) get_option( 'ms_index', array() ) ) as $key ) {
+		$index = (array) get_option( 'ms_index', array() );
+		foreach ( array_keys( $index ) as $key ) {
 			$out['pages'][ $key ] = array(
-				'meta' => get_option( 'ms_index' )[ $key ],
+				'meta' => $index[ $key ],
 				'data' => MS_Store::get_page( $key ),
 			);
 		}
@@ -92,19 +114,28 @@ class MS_Admin {
 
 	public static function handle_import() {
 		self::check( 'ms_import' );
-		if ( empty( $_FILES['file']['tmp_name'] ) ) {
+		$f = isset( $_FILES['file'] ) ? $_FILES['file'] : array(); // phpcs:ignore
+		if ( empty( $f['tmp_name'] ) || ! empty( $f['error'] ) || ! is_uploaded_file( $f['tmp_name'] ) ) {
 			self::back( 'No file uploaded.' );
 		}
-		$json = json_decode( file_get_contents( $_FILES['file']['tmp_name'] ), true ); // phpcs:ignore
-		if ( ! is_array( $json ) || ( $json['plugin'] ?? '' ) !== 'motion-studio' ) {
+		if ( ! empty( $f['size'] ) && $f['size'] > 5 * MB_IN_BYTES ) {
+			self::back( 'That file is too large (limit 5 MB).' );
+		}
+		$json = json_decode( (string) file_get_contents( $f['tmp_name'] ), true ); // phpcs:ignore
+		if ( ! is_array( $json ) || ( isset( $json['plugin'] ) ? $json['plugin'] : '' ) !== 'motion-studio' ) {
 			self::back( 'That is not a Motion Studio export file.' );
 		}
 		if ( ! empty( $json['global'] ) ) {
 			MS_Store::save_global( MS_Store::sanitize_data( $json['global'] ) );
 		}
 		$n = 0;
-		foreach ( (array) ( $json['pages'] ?? array() ) as $key => $p ) {
-			MS_Store::save_page( sanitize_key( $key ), MS_Store::sanitize_data( $p['data'] ?? array() ), (array) ( $p['meta'] ?? array() ) );
+		foreach ( array_slice( (array) ( isset( $json['pages'] ) ? $json['pages'] : array() ), 0, 500, true ) as $key => $p ) {
+			$key = sanitize_key( $key );
+			if ( '' === $key || '_global' === $key || ! is_array( $p ) ) {
+				continue;
+			}
+			$meta = isset( $p['meta'] ) && is_array( $p['meta'] ) ? $p['meta'] : array();
+			MS_Store::save_page( $key, MS_Store::sanitize_data( isset( $p['data'] ) ? $p['data'] : array() ), $meta );
 			$n++;
 		}
 		self::back( sprintf( 'Imported global design + %d page(s).', $n ) );
@@ -124,8 +155,9 @@ class MS_Admin {
 		?>
 		<div class="wrap">
 			<h1 style="display:flex;align-items:center;gap:8px"><span class="dashicons dashicons-art"></span> Motion Studio</h1>
-			<?php if ( ! empty( $_GET['ms_msg'] ) ) : // phpcs:ignore ?>
-				<div class="notice notice-success is-dismissible"><p><?php echo esc_html( wp_unslash( $_GET['ms_msg'] ) ); // phpcs:ignore ?></p></div>
+			<?php $notice = self::take_notice(); ?>
+			<?php if ( '' !== $notice ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php echo esc_html( $notice ); ?></p></div>
 			<?php endif; ?>
 
 			<div class="card" style="max-width:820px">
@@ -175,6 +207,15 @@ class MS_Admin {
 					<p><label><input type="checkbox" name="reduced" value="1" <?php checked( $s['reduced'] ); ?>> Respect visitors’ “reduce motion” system setting (recommended for accessibility)</label></p>
 					<p><label><input type="checkbox" name="mobile" value="1" <?php checked( $s['mobile'] ); ?>> Run animations &amp; FX on phones</label></p>
 					<p><label>Default scroll trigger point <input type="number" step="0.05" min="0" max="0.9" name="offset" value="<?php echo esc_attr( $s['offset'] ); ?>" style="width:80px"></label> <span class="description">(0 = as soon as visible, 0.5 = half visible)</span></p>
+					<h3>AI assistant (Google Gemini)</h3>
+					<p><label>API key <input type="password" name="gemini_key" value="" autocomplete="new-password" style="min-width:320px" placeholder="<?php echo MS_Store::gemini_key() ? esc_attr( '•••••••• (saved – leave empty to keep)' ) : 'Paste your Gemini API key'; ?>"></label>
+					<?php if ( defined( 'MS_GEMINI_KEY' ) ) : ?><span class="description">A key is defined in wp-config.php and is used instead.</span><?php endif; ?></p>
+					<p><label>Model <input type="text" name="gemini_model" value="<?php echo esc_attr( $s['gemini_model'] ); ?>" style="width:200px"></label></p>
+					<p><label><input type="checkbox" name="gemini_clear" value="1"> Remove the saved key</label></p>
+					<p class="description">The key stays on your server – it is never sent to visitors or to the editor in the browser. You can also define <code>MS_GEMINI_KEY</code> in wp-config.php.</p>
+					<h3>Security</h3>
+					<p><label><input type="checkbox" name="strict_html" value="1" <?php checked( $s['strict_html'] ); ?>> Always filter HTML saved from the editor (even for administrators who can post unfiltered HTML) – recommended</label></p>
+					<p><label><input type="checkbox" name="delete_data" value="1" <?php checked( $s['delete_data'] ); ?>> Delete all Motion Studio data when the plugin is deleted</label></p>
 					<p><button class="button button-primary">Save settings</button></p>
 				</form>
 			</div>

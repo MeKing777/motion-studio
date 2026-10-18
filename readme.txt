@@ -4,7 +4,7 @@ Tags: animation, visual editor, effects, text styles, page builder
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 
 Front-end visual editor for ANY theme: click an element to edit content, add in/out animations, FX, text styles and drag/resize the layout – per device.
@@ -61,6 +61,14 @@ Ctrl+K search everything · ? shortcuts list · Ctrl+S save · Ctrl+Z / Ctrl+Y u
 * Requires the user capability `edit_theme_options` (Administrators).
 
 == Changelog ==
+
+= 1.3.0 =
+* New: ✨ AI writer (Google Gemini) in the Edit tab – write, rewrite, shorten, expand, fix or translate the selected text. The API key is stored server-side (Settings, or MS_GEMINI_KEY in wp-config.php) and never sent to the browser.
+* New: Search bar element with 7 types (classic, pill, underline, expanding icon, glass, input + solid button, full-screen overlay), placeholder/button text, search scope (site/posts/pages/products) and optional live results.
+* New: Logo element (image + name, image only, name only) with size/round/gap/color, "Use my site logo", and "Add logo here" in headers.
+* New: "Add logos" for the logo marquee – pick several images from the Media Library.
+* Security: blocked javascript:/data: links, CSS sanitiser (no @import, script URLs), safe JSON in page output, save size limit, same-site URL checks, import hardening, notices no longer taken from the URL, Host header no longer trusted, sandboxed unknown video embeds, rel=noopener noreferrer, security headers on the editor, optional strict HTML filtering and delete-on-uninstall setting.
+* Fixes: double URL-decoding of editor addresses, pages with only added blocks vanishing from the dashboard list, connector lines polling too often, import/export edge cases.
 
 = 1.2.0 =
 * Friendlier editor: light design (with dark mode), clearer top bar with save status and a ⋯ menu.
